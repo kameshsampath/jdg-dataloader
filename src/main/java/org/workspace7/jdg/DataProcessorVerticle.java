@@ -9,7 +9,9 @@ import io.vertx.core.eventbus.MessageConsumer;
 import io.vertx.core.file.AsyncFile;
 import io.vertx.core.file.FileSystem;
 import io.vertx.core.file.OpenOptions;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import org.infinispan.AdvancedCache;
 import org.infinispan.client.hotrod.RemoteCache;
 import org.infinispan.client.hotrod.RemoteCacheManager;
 import org.infinispan.client.hotrod.configuration.ConfigurationBuilder;
@@ -30,7 +32,9 @@ public class DataProcessorVerticle extends AbstractVerticle {
             .getLogger(DataProcessorVerticle.class);
 
     private RemoteCache<String, Object> cache1;
+    private AdvancedCache<String, Object> advancedCache1;
     private RemoteCache<String, Object> cache2;
+    private AdvancedCache<String, Object> advancedCache2;
 
     @Override
     public void start() throws Exception {
@@ -80,6 +84,8 @@ public class DataProcessorVerticle extends AbstractVerticle {
                                         .map(s -> s.split(":"))
                                         .collect(Collectors.toMap(o -> o[0], o -> o[1]));
 
+
+
                                 putInJDG(cacheableValues, putResult -> {
 
                                     long timeDiff = System.currentTimeMillis() - startTime;
@@ -87,7 +93,7 @@ public class DataProcessorVerticle extends AbstractVerticle {
                                     if (putResult.succeeded()) {
                                         JsonObject reply = new JsonObject()
                                                 .put("dataFile", dataFileName)
-                                                .put("recordCount", cacheableValues.entrySet().size())
+                                                .put("recordCount", cacheableValues.keySet().size())
                                                 .put("status", "Successful")
                                                 .put("message", "Loaded data from file ")
                                                 .put("timeTaken", timeDiff + "(ms)");
@@ -116,12 +122,13 @@ public class DataProcessorVerticle extends AbstractVerticle {
         {
             if (jdgHandler.succeeded()) {
                 RemoteCacheManager cacheManager = jdgHandler.result();
-                cache1 = cacheManager.getCache("TEST_CACHE_ONE");
-                cache2 = cacheManager.getCache("TEST_CACHE_TWO");
+                JsonArray reverseCaches = config().getJsonArray("reverseCaches");
+                cache1 = cacheManager.getCache(reverseCaches.getString(0), false);
+                cache2 = cacheManager.getCache(reverseCaches.getString(1), false);
                 if (clear) {
-                    LOGGER.info("Clearing Cache:TEST_CACHE_ONE");
+                    LOGGER.info("Clearing Cache:{}", reverseCaches.getString(0));
                     cache1.clear();
-                    LOGGER.info("Clearing Cache:TEST_CACHE_TWO");
+                    LOGGER.info("Clearing Cache:{}", reverseCaches.getString(0));
                     cache2.clear();
                 }
                 fileConsumer.resume();
@@ -142,6 +149,8 @@ public class DataProcessorVerticle extends AbstractVerticle {
     }
 
     protected void putInJDG(Map<String, Object> cacheableValues, Handler<AsyncResult<Void>> putHandler) {
+
+
         vertx.executeBlocking(future -> {
                     try {
                         cache1.putAll(cacheableValues);

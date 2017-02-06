@@ -5,6 +5,7 @@ import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Future;
 import io.vertx.core.eventbus.EventBus;
 import io.vertx.core.file.FileSystem;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,13 +33,17 @@ public class DataLoaderVerticle extends AbstractVerticle {
         Boolean clearCache = config().getBoolean("clearCache", false);
         int workerInstances = config().getInteger("instances", 1);
 
-        Objects.requireNonNull(jdgServers, "Required valued values for JDG Servers");
+        JsonArray reverseCaches = config().getJsonArray("reverseCaches");
+
+        Objects.requireNonNull(jdgServers, "Required valued values for JDG Servers 'jdgServers'");
+        Objects.requireNonNull(reverseCaches, "Required cache names 'reverseCaches'");
 
         DeploymentOptions deploymentOptions = new DeploymentOptions();
         deploymentOptions.setConfig(new JsonObject()
                 .put("dataDir", dataDir)
                 .put("jdgServers", jdgServers)
-                .put("clearCache", clearCache));
+                .put("clearCache", clearCache)
+                .put("reverseCaches", reverseCaches));
         deploymentOptions.setInstances(workerInstances);
 
         deploymentOptions.setWorker(true);
