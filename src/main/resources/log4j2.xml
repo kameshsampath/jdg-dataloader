@@ -1,13 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Configuration status="INFO">
     <Appenders>
-        <Console name="Console" target="SYSTEM_OUT">
+        <console name="CONSOLE" target="SYSTEM_OUT">
             <PatternLayout pattern="[%30.30t] %-30.30c{1} %-5p %m%n"/>
-        </Console>
+        </console>
+        <File name="LOGFILE" fileName="logs/dataloader.log">
+            <PatternLayout>
+                <Pattern>%d %p %c{1.} [%t] %m%n</Pattern>
+            </PatternLayout>
+        </File>
+        <Async name="Async">
+            <AppenderRef ref="LOGFILE"/>
+        </Async>
     </Appenders>
     <Loggers>
         <Root level="info">
-            <AppenderRef ref="Console"/>
+            <AppenderRef ref="CONSOLE"/>
+            <AppenderRef ref="LOGFILE"/>
         </Root>
     </Loggers>
 </Configuration>

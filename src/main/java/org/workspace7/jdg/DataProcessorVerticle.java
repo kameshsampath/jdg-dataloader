@@ -7,6 +7,7 @@ import io.vertx.core.Handler;
 import io.vertx.core.eventbus.EventBus;
 import io.vertx.core.eventbus.MessageConsumer;
 import io.vertx.core.file.FileSystem;
+import io.vertx.core.json.JsonObject;
 import org.infinispan.client.hotrod.RemoteCache;
 import org.infinispan.client.hotrod.RemoteCacheManager;
 import org.infinispan.client.hotrod.configuration.ConfigurationBuilder;
@@ -40,9 +41,12 @@ public class DataProcessorVerticle extends AbstractVerticle {
 
         FileSystem fileSystem = vertx.fileSystem();
 
-        MessageConsumer<String> fileConsumer = eventBus
-                .<String>consumer("DATA_LOADER", message -> {
-                    String dataFileName = message.body();
+        MessageConsumer<JsonObject> fileConsumer = eventBus
+                .<JsonObject>consumer("DATA_LOADER", message -> {
+                    JsonObject data = message.body();
+
+                    String dataFileName = data.getString("fileName");
+                    Long startTime = data.getLong("startTime");
 
                     LOGGER.debug("Loading data form file :" + dataFileName);
 
@@ -67,21 +71,23 @@ public class DataProcessorVerticle extends AbstractVerticle {
                                     putInJDG(keyValuePair[0], keyValuePair[1], putResult -> {
 
                                         if (putResult.succeeded()) {
-                                            message.reply("Successfully loaded data from  file" + dataFileName);
+                                            long stopTime = System.currentTimeMillis();
+                                            long timeDiff = stopTime - startTime;
+                                            message.reply("Successfully loaded data from  file [" + dataFileName + "] in " + timeDiff + "(ms)");
                                         } else {
-                                            message.reply("Failed Loading data from  file" + dataFileName);
+                                            message.reply("Failed Loading data from  file [" + dataFileName + "]");
                                         }
                                     });
                                 }
                             }, err -> {
                                 LOGGER.error("Error processing data", err);
-                                message.reply("Failed Loading data from  file" + dataFileName);
+                                message.reply("Failed Loading data from  file[ " + dataFileName + "]");
                             });
 
                         } else {
-                            LOGGER.error("Error loading file:" + dataFileName,
+                            LOGGER.error("Error loading file[ " + dataFileName + "]",
                                     bufferAsyncResult.cause());
-                            message.reply("Failed Loading data from  file" + dataFileName);
+                            message.reply("Failed Loading data from  file [" + dataFileName + "]");
                         }
                     });
 

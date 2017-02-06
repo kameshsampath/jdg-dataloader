@@ -2,3 +2,4 @@
 dataDir: /Users/kameshs/tmp/jdg/data
 jdgServers: 127.0.0.1:11322;127.0.0.1:11422;127.0.0.1:11522
 clearCache: true
+instances: 2

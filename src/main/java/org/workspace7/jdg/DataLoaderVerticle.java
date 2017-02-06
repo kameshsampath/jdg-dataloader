@@ -10,8 +10,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import rx.Observable;
 
-import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * @author kameshs
@@ -40,26 +40,33 @@ public class DataLoaderVerticle extends AbstractVerticle {
                 .put("clearCache", clearCache));
 
         deploymentOptions.setWorker(true);
-
-        vertx.deployVerticle(DataProcessorVerticle.class.getName(), deploymentOptions);
+        AtomicInteger fileCount = new AtomicInteger();
 
         fileSystem.readDir(dataDir, fileListResult -> {
-            if (fileListResult.succeeded()) {
-                List<String> files = fileListResult.result();
 
-                Observable<String> filesObservables = Observable.from(files);
+            if (fileListResult.succeeded()) {
+
+                vertx.deployVerticle(DataProcessorVerticle.class.getName(), deploymentOptions);
+
+                Observable<String> filesObservables = Observable.from(fileListResult.result());
 
                 filesObservables.subscribe(dataFileName -> {
 
-                    LOGGER.debug("Processing file: {}", dataFileName);
+                    if (dataFileName.endsWith(".txt")) {
+                        LOGGER.info("Processing file: {}", dataFileName);
 
-                    eventBus.send("DATA_LOADER", dataFileName, reply -> {
-                        if (reply.succeeded()) {
-                            LOGGER.info(">>>" + reply.result().body());
-                        } else {
-                            LOGGER.error("Error processing file :", reply.cause());
-                        }
-                    });
+                        JsonObject processingData = new JsonObject();
+                        processingData.put("fileName",dataFileName);
+                        processingData.put("startTime",System.currentTimeMillis());
+                        eventBus.send("DATA_LOADER", processingData, reply -> {
+                            if (reply.succeeded()) {
+                                LOGGER.info(">>>" + reply.result().body());
+                                fileCount.incrementAndGet();
+                            } else {
+                                LOGGER.error("Error processing file :", reply.cause());
+                            }
+                        });
+                    }
 
                 }, err -> LOGGER.error("Error reading file ", err));
             }
