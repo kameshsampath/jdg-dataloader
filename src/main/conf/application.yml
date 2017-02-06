@@ -1,3 +1,4 @@
 ---
 dataDir: /Users/kameshs/tmp/jdg/data
-jdgServers: 10.232.37.17:11222;10.232.37.18:11222;10.232.37.19:11222
+jdgServers: 127.0.0.1:11322;127.0.0.1:11422;127.0.0.1:11522
+clearCache: true

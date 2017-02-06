@@ -33,6 +33,9 @@ public class DataProcessorVerticle extends AbstractVerticle {
 
         EventBus eventBus = vertx.eventBus();
         String dataDir = config().getString("dataDir");
+
+        Boolean clear = config().getBoolean("clearCache", false);
+
         Objects.requireNonNull(dataDir, "Invalid Data Dir :" + dataDir);
 
         FileSystem fileSystem = vertx.fileSystem();
@@ -41,7 +44,7 @@ public class DataProcessorVerticle extends AbstractVerticle {
                 .<String>consumer("DATA_LOADER", message -> {
                     String dataFileName = message.body();
 
-                    LOGGER.debug("Loading dat form file :" + dataFileName);
+                    LOGGER.debug("Loading data form file :" + dataFileName);
 
                     fileSystem.readFile(dataFileName, bufferAsyncResult -> {
 
@@ -60,6 +63,7 @@ public class DataProcessorVerticle extends AbstractVerticle {
 
                                     LOGGER.trace("Adding {}={}",
                                             keyValuePair[0], keyValuePair[1]);
+
                                     putInJDG(keyValuePair[0], keyValuePair[1], putResult -> {
 
                                         if (putResult.succeeded()) {
@@ -87,8 +91,14 @@ public class DataProcessorVerticle extends AbstractVerticle {
         configureJDG(jdgHandler -> {
             if (jdgHandler.succeeded()) {
                 RemoteCacheManager cacheManager = jdgHandler.result();
-                cache1 = cacheManager.getCache("TEST_GSTIN_GSTREF_CACHE");
-                cache2 = cacheManager.getCache("TEST_GSTREF_GSTIN_CACHE");
+                cache1 = cacheManager.getCache("TEST_CACHE_ONE");
+                cache2 = cacheManager.getCache("TEST_CACHE_TWO");
+                if (clear) {
+                    LOGGER.info("Clearing Cache:TEST_CACHE_ONE");
+                    cache1.clear();
+                    LOGGER.info("Clearing Cache:TEST_CACHE_TWO");
+                    cache2.clear();
+                }
                 fileConsumer.resume();
             }
         });
@@ -107,7 +117,6 @@ public class DataProcessorVerticle extends AbstractVerticle {
     }
 
     protected void putInJDG(String key, String value, Handler<AsyncResult<Void>> putHandler) {
-        LOGGER.trace("Adding {}={}", key, value);
         vertx.executeBlocking(future -> {
                     try {
                         cache1.put(key, value);
@@ -115,7 +124,6 @@ public class DataProcessorVerticle extends AbstractVerticle {
                     } catch (Exception e) {
                         future.fail(e);
                     }
-
                 },
                 prevPutResult -> {
                     if (prevPutResult.succeeded()) {

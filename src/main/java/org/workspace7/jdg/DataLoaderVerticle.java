@@ -29,13 +29,15 @@ public class DataLoaderVerticle extends AbstractVerticle {
 
         String dataDir = config().getString("dataDir");
         String jdgServers = config().getString("jdgServers");
+        Boolean clearCache = config().getBoolean("clearCache", false);
 
         Objects.requireNonNull(jdgServers, "Required valued values for JDG Servers");
 
         DeploymentOptions deploymentOptions = new DeploymentOptions();
         deploymentOptions.setConfig(new JsonObject()
                 .put("dataDir", dataDir)
-                .put("jdgServers", jdgServers));
+                .put("jdgServers", jdgServers)
+                .put("clearCache", clearCache));
 
         deploymentOptions.setWorker(true);
 
@@ -53,7 +55,7 @@ public class DataLoaderVerticle extends AbstractVerticle {
 
                     eventBus.send("DATA_LOADER", dataFileName, reply -> {
                         if (reply.succeeded()) {
-                            LOGGER.info(">>>" + reply.result());
+                            LOGGER.info(">>>" + reply.result().body());
                         } else {
                             LOGGER.error("Error processing file :", reply.cause());
                         }
