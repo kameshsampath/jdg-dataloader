@@ -16,7 +16,10 @@ import org.infinispan.client.hotrod.configuration.ConfigurationBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * @author kameshs
@@ -62,34 +65,45 @@ public class DataProcessorVerticle extends AbstractVerticle {
 
                                 String contentBuffer = buffer.toString();
 
-                                rx.Observable<String> cacheValues = rx.Observable
-                                        .from(contentBuffer.split("\n"));
+                                String[] contentStrings = contentBuffer.split("\n");
 
-                                cacheValues.subscribe(s -> {
+                                if (contentStrings == null || contentStrings.length <= 0) {
+                                    JsonObject reply = new JsonObject()
+                                            .put("dataFile", dataFileName)
+                                            .put("status", "Warning")
+                                            .put("message", "No data found in file");
+                                }
 
-                                    if (s.contains(":") && s.indexOf(":") != -1) {
-                                        String[] keyValuePair = s.split(":");
+                                Map<String, Object> cacheableValues = Stream.of(contentStrings)
+                                        .map(s -> s.replaceAll("\r", ""))
+                                        .filter(s -> s.contains(":") && s.indexOf(":") != -1)
+                                        .map(s -> s.split(":"))
+                                        .collect(Collectors.toMap(o -> o[0], o -> o[1]));
 
-                                        putInJDG(keyValuePair[0], keyValuePair[1], putResult -> {
+                                putInJDG(cacheableValues, putResult -> {
 
-                                            if (putResult.succeeded()) {
-                                                long stopTime = System.currentTimeMillis();
-                                                long timeDiff = stopTime - startTime;
-                                                message.reply("Successfully loaded data from  file [" + dataFileName + "] in " + timeDiff + "(ms)");
-                                            } else {
-                                                message.reply("Failed Loading data from  file [" + dataFileName + "]");
-                                            }
-                                        });
+                                    long timeDiff = System.currentTimeMillis() - startTime;
+
+                                    if (putResult.succeeded()) {
+                                        JsonObject reply = new JsonObject()
+                                                .put("dataFile", dataFileName)
+                                                .put("recordCount", cacheableValues.entrySet().size())
+                                                .put("status", "Successful")
+                                                .put("message", "Loaded data from file ")
+                                                .put("timeTaken", timeDiff + "(ms)");
+                                        message.reply(reply);
                                     }
-                                }, err -> {
-                                    LOGGER.error("Error processing data", err);
-                                    message.reply("Failed Loading data from  file[ " + dataFileName + "]");
                                 });
+
 
                             });
                         } else {
                             LOGGER.error("Error processing data", ares.cause());
-                            message.reply("Failed Loading data from  file[ " + dataFileName + "]");
+                            JsonObject reply = new JsonObject()
+                                    .put("dataFile", dataFileName)
+                                    .put("status", "Error")
+                                    .put("message", ares.cause().getMessage());
+                            message.reply(reply);
                         }
 
                     });
@@ -127,19 +141,29 @@ public class DataProcessorVerticle extends AbstractVerticle {
         jdgHandler.handle(Future.succeededFuture(cacheManager));
     }
 
-    protected void putInJDG(String key, String value, Handler<AsyncResult<Void>> putHandler) {
+    protected void putInJDG(Map<String, Object> cacheableValues, Handler<AsyncResult<Void>> putHandler) {
         vertx.executeBlocking(future -> {
                     try {
-                        cache1.put(key, value);
+                        cache1.putAll(cacheableValues);
                         future.complete();
                     } catch (Exception e) {
                         future.fail(e);
                     }
                 },
-                prevPutResult -> {
+                (AsyncResult<Object> prevPutResult) -> {
                     if (prevPutResult.succeeded()) {
-                        cache2.put(value, key);
-                        putHandler.handle(Future.succeededFuture());
+                        try {
+                            Map<String, String> reverseMap = cacheableValues.
+                                    entrySet()
+                                    .stream()
+                                    .collect(Collectors.toMap(
+                                            o -> String.valueOf(o.getValue()),
+                                            o -> o.getKey(), (u, u2) -> u));
+                            cache2.putAll(reverseMap);
+                            putHandler.handle(Future.succeededFuture());
+                        } catch (Exception e) {
+                            putHandler.handle(Future.failedFuture(e));
+                        }
                     } else {
                         LOGGER.error("Unable to add data :", prevPutResult.cause());
                         putHandler.handle(Future.failedFuture(prevPutResult.cause()));

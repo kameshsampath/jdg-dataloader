@@ -3,3 +3,6 @@ dataDir: /Users/kameshs/tmp/jdg/data
 jdgServers: 127.0.0.1:11322;127.0.0.1:11422;127.0.0.1:11522
 clearCache: true
 instances: 2
+reverseCaches:
+ - TEST_CACHE_ONE
+ - TEST_CACHE_TWO

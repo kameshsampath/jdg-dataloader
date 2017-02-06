@@ -65,7 +65,7 @@ public class DataLoaderVerticle extends AbstractVerticle {
                                 LOGGER.info(">>>" + reply.result().body());
                                 fileCount.incrementAndGet();
                             } else {
-                                LOGGER.error("Error processing file :", reply.cause());
+                                LOGGER.error("Error processing file :" + dataFileName, reply.cause());
                             }
                         });
                     }
