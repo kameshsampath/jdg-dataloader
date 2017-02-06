@@ -6,7 +6,9 @@ import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.eventbus.EventBus;
 import io.vertx.core.eventbus.MessageConsumer;
+import io.vertx.core.file.AsyncFile;
 import io.vertx.core.file.FileSystem;
+import io.vertx.core.file.OpenOptions;
 import io.vertx.core.json.JsonObject;
 import org.infinispan.client.hotrod.RemoteCache;
 import org.infinispan.client.hotrod.RemoteCacheManager;
@@ -50,51 +52,54 @@ public class DataProcessorVerticle extends AbstractVerticle {
 
                     LOGGER.debug("Loading data form file :" + dataFileName);
 
-                    fileSystem.readFile(dataFileName, bufferAsyncResult -> {
+                    fileSystem.open(dataFileName, new OpenOptions(), ares -> {
 
-                        if (bufferAsyncResult.succeeded()) {
+                        AsyncFile file = ares.result();
 
-                            String contentBuffer = bufferAsyncResult.result()
-                                    .toString();
+                        if (ares.succeeded()) {
 
-                            rx.Observable<String> cacheValues = rx.Observable
-                                    .from(contentBuffer.split("\n"));
+                            file.handler(buffer -> {
 
-                            cacheValues.subscribe(s -> {
+                                String contentBuffer = buffer.toString();
 
-                                if (s.contains(":") && s.indexOf(":") != -1) {
-                                    String[] keyValuePair = s.split(":");
+                                rx.Observable<String> cacheValues = rx.Observable
+                                        .from(contentBuffer.split("\n"));
 
-                                    LOGGER.trace("Adding {}={}",
-                                            keyValuePair[0], keyValuePair[1]);
+                                cacheValues.subscribe(s -> {
 
-                                    putInJDG(keyValuePair[0], keyValuePair[1], putResult -> {
+                                    if (s.contains(":") && s.indexOf(":") != -1) {
+                                        String[] keyValuePair = s.split(":");
 
-                                        if (putResult.succeeded()) {
-                                            long stopTime = System.currentTimeMillis();
-                                            long timeDiff = stopTime - startTime;
-                                            message.reply("Successfully loaded data from  file [" + dataFileName + "] in " + timeDiff + "(ms)");
-                                        } else {
-                                            message.reply("Failed Loading data from  file [" + dataFileName + "]");
-                                        }
-                                    });
-                                }
-                            }, err -> {
-                                LOGGER.error("Error processing data", err);
-                                message.reply("Failed Loading data from  file[ " + dataFileName + "]");
+                                        putInJDG(keyValuePair[0], keyValuePair[1], putResult -> {
+
+                                            if (putResult.succeeded()) {
+                                                long stopTime = System.currentTimeMillis();
+                                                long timeDiff = stopTime - startTime;
+                                                message.reply("Successfully loaded data from  file [" + dataFileName + "] in " + timeDiff + "(ms)");
+                                            } else {
+                                                message.reply("Failed Loading data from  file [" + dataFileName + "]");
+                                            }
+                                        });
+                                    }
+                                }, err -> {
+                                    LOGGER.error("Error processing data", err);
+                                    message.reply("Failed Loading data from  file[ " + dataFileName + "]");
+                                });
+
                             });
-
                         } else {
-                            LOGGER.error("Error loading file[ " + dataFileName + "]",
-                                    bufferAsyncResult.cause());
-                            message.reply("Failed Loading data from  file [" + dataFileName + "]");
+                            LOGGER.error("Error processing data", ares.cause());
+                            message.reply("Failed Loading data from  file[ " + dataFileName + "]");
                         }
+
                     });
 
                 }).pause(); // don't start to consume file immediately as we need JDG client for processing
 
         //Configure the JDG client
-        configureJDG(jdgHandler -> {
+        configureJDG(jdgHandler ->
+
+        {
             if (jdgHandler.succeeded()) {
                 RemoteCacheManager cacheManager = jdgHandler.result();
                 cache1 = cacheManager.getCache("TEST_CACHE_ONE");
