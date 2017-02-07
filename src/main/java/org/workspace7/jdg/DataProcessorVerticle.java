@@ -79,11 +79,12 @@ public class DataProcessorVerticle extends AbstractVerticle {
                                 }
 
                                 Map<String, Object> cacheableValues = Stream.of(contentStrings)
+                                        .filter(s -> s != null)
                                         .map(s -> s.replaceAll("\r", ""))
                                         .filter(s -> s.contains(":") && s.indexOf(":") != -1)
                                         .map(s -> s.split(":"))
+                                        .filter(s -> s != null && s.length == 2)
                                         .collect(Collectors.toMap(o -> o[0], o -> o[1]));
-
 
 
                                 putInJDG(cacheableValues, putResult -> {
