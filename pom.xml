@@ -18,7 +18,7 @@
 
         <!-- log4j -->
         <log4j-bom.version>2.7</log4j-bom.version>
-        <vertx.projectVersion>3.3.3</vertx.projectVersion>
+        <vertx.projectVersion>3.4.0.Beta1</vertx.projectVersion>
         <fabric8-vertx-maven-plugin.projectVersion>1.0.4</fabric8-vertx-maven-plugin.projectVersion>
 
     </properties>

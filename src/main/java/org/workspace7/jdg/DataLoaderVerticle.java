@@ -1,15 +1,17 @@
 package org.workspace7.jdg;
 
-import io.vertx.core.AbstractVerticle;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Future;
-import io.vertx.core.eventbus.EventBus;
-import io.vertx.core.file.FileSystem;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import io.vertx.rxjava.core.AbstractVerticle;
+import io.vertx.rxjava.core.eventbus.EventBus;
+import io.vertx.rxjava.core.eventbus.Message;
+import io.vertx.rxjava.core.file.FileSystem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import rx.Observable;
+import rx.Single;
 
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -65,14 +67,9 @@ public class DataLoaderVerticle extends AbstractVerticle {
                         JsonObject processingData = new JsonObject();
                         processingData.put("fileName", dataFileName);
                         processingData.put("startTime", System.currentTimeMillis());
-                        eventBus.send("DATA_LOADER", processingData, reply -> {
-                            if (reply.succeeded()) {
-                                LOGGER.info(">>>" + reply.result().body());
-                                fileCount.incrementAndGet();
-                            } else {
-                                LOGGER.error("Error processing file :" + dataFileName, reply.cause());
-                            }
-                        });
+                        Single<Message<JsonObject>> reply = eventBus.rxSend("DATA_LOADER", processingData);
+                        reply.subscribe(resp -> LOGGER.info("{}", resp.body()),
+                                throwable -> LOGGER.error("Error", throwable));
                     }
 
                 }, err -> LOGGER.error("Error reading file ", err));

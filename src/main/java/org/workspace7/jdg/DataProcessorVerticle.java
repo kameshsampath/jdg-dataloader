@@ -1,27 +1,28 @@
 package org.workspace7.jdg;
 
-import io.vertx.core.AbstractVerticle;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
-import io.vertx.core.eventbus.EventBus;
-import io.vertx.core.eventbus.MessageConsumer;
-import io.vertx.core.file.AsyncFile;
-import io.vertx.core.file.FileSystem;
-import io.vertx.core.file.OpenOptions;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
-import org.infinispan.AdvancedCache;
+import io.vertx.rxjava.core.AbstractVerticle;
+import io.vertx.rxjava.core.eventbus.EventBus;
+import io.vertx.rxjava.core.eventbus.MessageConsumer;
+import io.vertx.rxjava.core.file.FileSystem;
 import org.infinispan.client.hotrod.RemoteCache;
 import org.infinispan.client.hotrod.RemoteCacheManager;
 import org.infinispan.client.hotrod.configuration.ConfigurationBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import rx.Observable;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * @author kameshs
@@ -31,10 +32,10 @@ public class DataProcessorVerticle extends AbstractVerticle {
     private static final Logger LOGGER = LoggerFactory
             .getLogger(DataProcessorVerticle.class);
 
+    private final Pattern PATTERN = Pattern.compile("(?ms)(?<key>\\w+\\d*)(:)(?<value>\\w+\\d*)$");
+
     private RemoteCache<String, Object> cache1;
-    private AdvancedCache<String, Object> advancedCache1;
     private RemoteCache<String, Object> cache2;
-    private AdvancedCache<String, Object> advancedCache2;
 
     @Override
     public void start() throws Exception {
@@ -44,78 +45,55 @@ public class DataProcessorVerticle extends AbstractVerticle {
         EventBus eventBus = vertx.eventBus();
         String dataDir = config().getString("dataDir");
 
-        Boolean clear = config().getBoolean("clearCache", false);
-
         Objects.requireNonNull(dataDir, "Invalid Data Dir :" + dataDir);
+
+        boolean clear = config().getBoolean("clearCache");
 
         FileSystem fileSystem = vertx.fileSystem();
 
-        MessageConsumer<JsonObject> fileConsumer = eventBus
-                .<JsonObject>consumer("DATA_LOADER", message -> {
-                    JsonObject data = message.body();
+        MessageConsumer<JsonObject> fileConsumer = eventBus.consumer("DATA_LOADER", message -> {
 
-                    String dataFileName = data.getString("fileName");
-                    Long startTime = data.getLong("startTime");
+            JsonObject data = message.body();
 
-                    LOGGER.debug("Loading data form file :" + dataFileName);
+            String dataFileName = data.getString("fileName");
+            Long startTime = data.getLong("startTime");
 
-                    fileSystem.open(dataFileName, new OpenOptions(), ares -> {
+            LOGGER.info("Loading data form file {}", dataFileName);
 
-                        AsyncFile file = ares.result();
+            ConcurrentHashMap cacheableValues = new ConcurrentHashMap();
 
-                        if (ares.succeeded()) {
-
-                            file.handler(buffer -> {
-
-                                String contentBuffer = buffer.toString();
-
-                                String[] contentStrings = contentBuffer.split("\n");
-
-                                if (contentStrings == null || contentStrings.length <= 0) {
-                                    JsonObject reply = new JsonObject()
-                                            .put("dataFile", dataFileName)
-                                            .put("status", "Warning")
-                                            .put("message", "No data found in file");
-                                }
-
-                                Map<String, Object> cacheableValues = Stream.of(contentStrings)
-                                        .filter(s -> s != null)
-                                        .map(s -> s.replaceAll("\r", ""))
-                                        .filter(s -> s.contains(":") && s.indexOf(":") != -1)
-                                        .map(s -> s.split(":"))
-                                        .filter(s -> s != null && s.length == 2)
-                                        .collect(Collectors.toMap(o -> o[0], o -> o[1]));
-
-
-                                putInJDG(cacheableValues, putResult -> {
-
-                                    long timeDiff = System.currentTimeMillis() - startTime;
-
-                                    if (putResult.succeeded()) {
-                                        JsonObject reply = new JsonObject()
-                                                .put("dataFile", dataFileName)
-                                                .put("recordCount", cacheableValues.keySet().size())
-                                                .put("status", "Successful")
-                                                .put("message", "Loaded data from file ")
-                                                .put("timeTaken", timeDiff + "(ms)");
-                                        message.reply(reply);
-                                    }
-                                });
-
-
-                            });
-                        } else {
-                            LOGGER.error("Error processing data", ares.cause());
-                            JsonObject reply = new JsonObject()
-                                    .put("dataFile", dataFileName)
-                                    .put("status", "Error")
-                                    .put("message", ares.cause().getMessage());
-                            message.reply(reply);
+            fileSystem
+                    .rxReadFile(dataFileName)
+                    .flatMapObservable(buffer ->
+                            Observable.from(buffer.toString("utf-8").split("\r?\\n$")))
+                    .filter(line -> !line.trim().isEmpty())
+                    .map(line -> {
+                        Matcher matcher = PATTERN.matcher(line);
+                        HashMap<String, Object> temp = new HashMap<>();
+                        while (matcher.find()) {
+                            temp.put(matcher.group("key"), matcher.group("value"));
                         }
+                        return temp;
+                    })
+                    .subscribe(objectMap -> cacheableValues.putAll(objectMap)
+                            , throwable -> LOGGER.error("Error:", throwable), () -> {
+                                LOGGER.info("Loading {} keys", cacheableValues.size());
+                                putInJDG(cacheableValues,
+                                        putResult -> {
+                                            long timeDiff = System.currentTimeMillis() - startTime;
+                                            if (putResult.succeeded()) {
+                                                JsonObject reply = new JsonObject()
+                                                        .put("dataFile", dataFileName)
+                                                        .put("recordCount", cacheableValues.keySet().size())
+                                                        .put("status", "Successful")
+                                                        .put("message", "Loaded data from file ")
+                                                        .put("timeTaken", timeDiff + "(ms)");
+                                                message.reply(reply);
+                                            }
 
-                    });
-
-                }).pause(); // don't start to consume file immediately as we need JDG client for processing
+                                        });
+                            });
+        });
 
         //Configure the JDG client
         configureJDG(jdgHandler ->
@@ -129,7 +107,7 @@ public class DataProcessorVerticle extends AbstractVerticle {
                 if (clear) {
                     LOGGER.info("Clearing Cache:{}", reverseCaches.getString(0));
                     cache1.clear();
-                    LOGGER.info("Clearing Cache:{}", reverseCaches.getString(0));
+                    LOGGER.info("Clearing Cache:{}", reverseCaches.getString(1));
                     cache2.clear();
                 }
                 fileConsumer.resume();
@@ -150,8 +128,6 @@ public class DataProcessorVerticle extends AbstractVerticle {
     }
 
     protected void putInJDG(Map<String, Object> cacheableValues, Handler<AsyncResult<Void>> putHandler) {
-
-
         vertx.executeBlocking(future -> {
                     try {
                         cache1.putAll(cacheableValues);
